@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PromptChain</title>
+  <style>
+    :root {
+      --bg: #0d0d0f;
+      --surface: #16161a;
+      --surface2: #1e1e24;
+      --border: #2a2a32;
+      --accent: #7c5cfc;
+      --accent2: #a78bfa;
+      --text: #e2e2e8;
+      --muted: #6b6b80;
+      --danger: #ef4444;
+      --success: #22c55e;
+      --warn: #f59e0b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; min-height: 100vh; }
+
+    /* HEADER */
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      z-index: 100;
+    }
+    .logo { font-size: 1.15rem; font-weight: 700; color: var(--accent2); }
+    .logo small { color: var(--muted); font-weight: 400; font-size: 0.8rem; margin-left: 8px; }
+    .wallet-section { text-align: right; }
+    #wallet-btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 8px 18px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.88rem;
+      font-weight: 600;
+      transition: opacity 0.2s;
+    }
+    #wallet-btn:hover { opacity: 0.85; }
+    #wallet-btn.connected { background: var(--surface2); border: 1px solid var(--border); color: var(--accent2); }
+    #wallet-addr { font-size: 0.72rem; color: var(--muted); margin-top: 3px; font-family: monospace; }
+
+    /* LAYOUT */
+    .layout { display: grid; grid-template-columns: 340px 1fr; gap: 0; min-height: calc(100vh - 57px); }
+    .sidebar {
+      border-right: 1px solid var(--border);
+      padding: 28px 24px;
+      position: sticky;
+      top: 57px;
+      height: calc(100vh - 57px);
+      overflow-y: auto;
+    }
+    .explorer { padding: 28px 28px; }
+
+    /* SECTION LABEL */
+    .sec-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 1.8px;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+
+    /* FORM */
+    .form-group { margin-bottom: 14px; }
+    .form-group label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 5px; }
+    .form-group input,
+    .form-group textarea {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 9px 12px;
+      font-size: 0.88rem;
+      outline: none;
+      transition: border-color 0.2s;
+      font-family: inherit;
+      resize: vertical;
+    }
+    .form-group input:focus,
+    .form-group textarea:focus { border-color: var(--accent); }
+
+    .btn-primary {
+      width: 100%;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 600;
+      transition: opacity 0.2s;
+      margin-top: 4px;
+    }
+    .btn-primary:hover { opacity: 0.85; }
+    .btn-primary:disabled { opacity: 0.35; cursor: not-allowed; }
+    .btn-cancel {
+      width: 100%;
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 9px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.88rem;
+      margin-top: 8px;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    .btn-cancel:hover { border-color: var(--muted); color: var(--text); }
+
+    #status-msg {
+      font-size: 0.8rem;
+      min-height: 18px;
+      margin-top: 10px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      display: none;
+    }
+    #status-msg.show { display: block; }
+    #status-msg.ok { background: #14291a; color: var(--success); }
+    #status-msg.err { background: #2a1414; color: var(--danger); }
+    #status-msg.info { background: #1a1a2a; color: var(--accent2); }
+
+    /* EDIT MODE INDICATOR */
+    .edit-banner {
+      background: #1f1a10;
+      border: 1px solid #4a3a10;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 0.8rem;
+      color: var(--warn);
+      margin-bottom: 14px;
+      display: none;
+    }
+    .edit-banner.show { display: block; }
+
+    /* FILTER */
+    .filter-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+    .filter-row input {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 8px 12px;
+      font-size: 0.85rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .filter-row input:focus { border-color: var(--accent); }
+    .refresh-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 8px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: color 0.2s;
+      white-space: nowrap;
+    }
+    .refresh-btn:hover { color: var(--accent2); border-color: var(--accent2); }
+
+    /* STATS BAR */
+    .stats-bar {
+      display: flex;
+      gap: 20px;
+      margin-bottom: 18px;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+    .stats-bar span b { color: var(--accent2); }
+
+    /* PROMPT CARD */
+    #prompts-list { display: flex; flex-direction: column; gap: 12px; }
+    .prompt-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 18px;
+      transition: border-color 0.2s;
+    }
+    .prompt-card:hover { border-color: #3a3a48; }
+    .prompt-card.mine { border-left: 3px solid var(--accent); }
+
+    .card-top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .tag {
+      background: #2d1f6e;
+      color: var(--accent2);
+      font-size: 0.72rem;
+      font-weight: 700;
+      border-radius: 6px;
+      padding: 2px 9px;
+      letter-spacing: 0.5px;
+    }
+    .mine-badge {
+      background: #1a2d1a;
+      color: var(--success);
+      font-size: 0.68rem;
+      font-weight: 700;
+      border-radius: 6px;
+      padding: 2px 8px;
+    }
+
+    .card-content {
+      font-size: 0.9rem;
+      line-height: 1.65;
+      color: var(--text);
+      margin-bottom: 12px;
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+
+    .card-meta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .card-meta .owner { font-family: monospace; font-size: 0.72rem; }
+    .card-actions { display: flex; gap: 6px; margin-left: auto; }
+
+    .btn-sm {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      border-radius: 6px;
+      padding: 3px 10px;
+      cursor: pointer;
+      font-size: 0.75rem;
+      transition: all 0.2s;
+    }
+    .btn-sm:hover { color: var(--text); border-color: var(--muted); }
+    .btn-sm.copy:hover { color: var(--accent2); border-color: var(--accent2); }
+    .btn-sm.edit:hover { color: var(--warn); border-color: var(--warn); }
+    .btn-sm.del:hover { color: var(--danger); border-color: var(--danger); }
+
+    .empty { text-align: center; color: var(--muted); padding: 60px 0; font-size: 0.9rem; }
+    .loading { text-align: center; color: var(--muted); padding: 40px 0; font-size: 0.85rem; }
+
+    /* DIVIDER */
+    .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+
+    /* RESPONSIVE */
+    @media (max-width: 720px) {
+      .layout { grid-template-columns: 1fr; }
+      .sidebar { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--border); }
+      header { padding: 14px 16px; }
+      .explorer { padding: 20px 16px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="logo">PromptChain <small>Stellar Prompt Registry</small></div>
+  </div>
+  <div class="wallet-section">
+    <button id="wallet-btn" onclick="connectWallet()">Connect Wallet</button>
+    <div id="wallet-addr"></div>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- SIDEBAR: Form -->
+  <aside class="sidebar">
+    <p class="sec-label" id="form-mode-label">Register Prompt</p>
+
+    <div class="edit-banner" id="edit-banner">
+      ✏️ Mode edit — mengubah prompt yang dipilih
+    </div>
+
+    <div class="form-group">
+      <label>Kategori</label>
+      <input id="inp-category" type="text" placeholder="Midjourney, ChatGPT, Gemini..."/>
+    </div>
+    <div class="form-group">
+      <label>Isi Prompt</label>
+      <textarea id="inp-content" rows="6" placeholder="Tulis isi prompt milikmu..."></textarea>
+    </div>
+
+    <button class="btn-primary" id="submit-btn" onclick="handleSubmit()" disabled>
+      Connect wallet dulu
+    </button>
+    <button class="btn-cancel" id="cancel-btn" onclick="cancelEdit()" style="display:none">
+      Batal Edit
+    </button>
+
+    <div id="status-msg"></div>
+
+    <hr class="divider"/>
+    <p style="font-size:0.75rem; color:var(--muted); line-height:1.6;">
+      Setiap prompt yang diregister akan tercatat permanen di Stellar blockchain bersama wallet address dan waktu registrasi sebagai bukti kepemilikan.
+    </p>
+  </aside>
+
+  <!-- MAIN: Explorer -->
+  <main class="explorer">
+    <p class="sec-label">Prompt Explorer</p>
+
+    <div class="filter-row">
+      <input id="filter-cat" type="text" placeholder="Filter kategori..." oninput="renderPrompts()"/>
+      <input id="filter-owner" type="text" placeholder="Filter wallet..." oninput="renderPrompts()"/>
+      <button class="refresh-btn" onclick="fetchPrompts()">↻ Refresh</button>
+    </div>
+
+    <div class="stats-bar">
+      <span>Total: <b id="stat-total">-</b></span>
+      <span>Ditampilkan: <b id="stat-shown">-</b></span>
+      <span>Milikku: <b id="stat-mine">-</b></span>
+    </div>
+
+    <div id="prompts-list">
+      <div class="loading">Memuat data dari blockchain...</div>
+    </div>
+  </main>
+</div>
+
+<script>
+// ================================================
+// CONFIG — ganti CONTRACT_ID setelah deploy
+// ================================================
+const CONTRACT_ID = "MASUKKAN_CONTRACT_ID_DISINI";
+const NETWORK_PASSPHRASE = "Test SDF Network ; September 2015";
+const RPC_URL = "https://soroban-testnet.stellar.org";
+// ================================================
+
+let walletAddress = null;
+let allPrompts = [];
+let editingId = null;
+let StellarSdk = null;
+
+// ---- SDK Loader ----
+async function getSDK() {
+  if (StellarSdk) return StellarSdk;
+  await new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/stellar-sdk/12.0.0/stellar-sdk.min.js";
+    s.onload = res;
+    s.onerror = () => rej(new Error("Gagal load Stellar SDK"));
+    document.head.appendChild(s);
+  });
+  StellarSdk = window.StellarSdk;
+  return StellarSdk;
+}
+
+// ---- Wallet ----
+async function connectWallet() {
+  try {
+    if (typeof window.freighter === "undefined") {
+      setStatus("Install Freighter wallet dulu: freighter.app", "err");
+      return;
+    }
+    const { address } = await window.freighter.getAddress();
+    walletAddress = address;
+
+    const btn = document.getElementById("wallet-btn");
+    btn.textContent = address.slice(0,6) + "..." + address.slice(-4);
+    btn.classList.add("connected");
+    document.getElementById("wallet-addr").textContent = "Testnet";
+
+    const submitBtn = document.getElementById("submit-btn");
+    submitBtn.textContent = "Daftarkan Hak Cipta";
+    submitBtn.disabled = false;
+
+    setStatus("Wallet terhubung!", "ok");
+    renderPrompts();
+  } catch (e) {
+    setStatus("Gagal connect wallet: " + e.message, "err");
+  }
+}
+
+// ---- Handle Submit (Create atau Update) ----
+async function handleSubmit() {
+  if (editingId !== null) {
+    await updatePrompt();
+  } else {
+    await registerPrompt();
+  }
+}
+
+// ---- CREATE ----
+async function registerPrompt() {
+  if (!walletAddress) return;
+  const category = document.getElementById("inp-category").value.trim();
+  const content = document.getElementById("inp-content").value.trim();
+  if (!category || !content) { setStatus("Kategori dan isi prompt wajib diisi.", "err"); return; }
+
+  setStatus("Menyiapkan transaksi...", "info");
+  try {
+    const sdk = await getSDK();
+    const server = new sdk.SorobanRpc.Server(RPC_URL);
+    const account = await server.getAccount(walletAddress);
+    const contract = new sdk.Contract(CONTRACT_ID);
+
+    const tx = new sdk.TransactionBuilder(account, {
+      fee: sdk.BASE_FEE,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(contract.call(
+        "register_prompt",
+        sdk.Address.fromString(walletAddress).toScVal(),
+        sdk.nativeToScVal(category, { type: "string" }),
+        sdk.nativeToScVal(content, { type: "string" }),
+      ))
+      .setTimeout(30)
+      .build();
+
+    await signAndSend(sdk, server, tx);
+    setStatus("Prompt berhasil diregister!", "ok");
+    document.getElementById("inp-category").value = "";
+    document.getElementById("inp-content").value = "";
+    setTimeout(fetchPrompts, 5000);
+  } catch (e) {
+    setStatus("Error: " + e.message, "err");
+  }
+}
+
+// ---- UPDATE ----
+async function updatePrompt() {
+  if (!walletAddress || editingId === null) return;
+  const category = document.getElementById("inp-category").value.trim();
+  const content = document.getElementById("inp-content").value.trim();
+  if (!category || !content) { setStatus("Kategori dan isi prompt wajib diisi.", "err"); return; }
+
+  setStatus("Menyimpan perubahan...", "info");
+  try {
+    const sdk = await getSDK();
+    const server = new sdk.SorobanRpc.Server(RPC_URL);
+    const account = await server.getAccount(walletAddress);
+    const contract = new sdk.Contract(CONTRACT_ID);
+
+    const tx = new sdk.TransactionBuilder(account, {
+      fee: sdk.BASE_FEE,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(contract.call(
+        "update_prompt",
+        sdk.Address.fromString(walletAddress).toScVal(),
+        sdk.nativeToScVal(editingId, { type: "u64" }),
+        sdk.nativeToScVal(category, { type: "string" }),
+        sdk.nativeToScVal(content, { type: "string" }),
+      ))
+      .setTimeout(30)
+      .build();
+
+    await signAndSend(sdk, server, tx);
+    setStatus("Prompt berhasil diupdate!", "ok");
+    cancelEdit();
+    setTimeout(fetchPrompts, 5000);
+  } catch (e) {
+    setStatus("Error update: " + e.message, "err");
+  }
+}
+
+// ---- DELETE ----
+async function deletePrompt(id) {
+  if (!walletAddress) { setStatus("Connect wallet dulu.", "err"); return; }
+  if (!confirm("Hapus prompt ini dari blockchain? Tindakan ini permanen.")) return;
+
+  setStatus("Menghapus...", "info");
+  try {
+    const sdk = await getSDK();
+    const server = new sdk.SorobanRpc.Server(RPC_URL);
+    const account = await server.getAccount(walletAddress);
+    const contract = new sdk.Contract(CONTRACT_ID);
+
+    const tx = new sdk.TransactionBuilder(account, {
+      fee: sdk.BASE_FEE,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(contract.call(
+        "delete_prompt",
+        sdk.Address.fromString(walletAddress).toScVal(),
+        sdk.nativeToScVal(id, { type: "u64" }),
+      ))
+      .setTimeout(30)
+      .build();
+
+    await signAndSend(sdk, server, tx);
+    setStatus("Prompt berhasil dihapus.", "ok");
+    setTimeout(fetchPrompts, 5000);
+  } catch (e) {
+    setStatus("Error hapus: " + e.message, "err");
+  }
+}
+
+// ---- Edit Mode ----
+function startEdit(id, category, content) {
+  editingId = id;
+  document.getElementById("inp-category").value = category;
+  document.getElementById("inp-content").value = content;
+  document.getElementById("form-mode-label").textContent = "Edit Prompt";
+  document.getElementById("edit-banner").classList.add("show");
+  document.getElementById("submit-btn").textContent = "Simpan Perubahan";
+  document.getElementById("cancel-btn").style.display = "block";
+  document.querySelector(".sidebar").scrollTop = 0;
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function cancelEdit() {
+  editingId = null;
+  document.getElementById("inp-category").value = "";
+  document.getElementById("inp-content").value = "";
+  document.getElementById("form-mode-label").textContent = "Register Prompt";
+  document.getElementById("edit-banner").classList.remove("show");
+  document.getElementById("submit-btn").textContent = "Daftarkan Hak Cipta";
+  document.getElementById("cancel-btn").style.display = "none";
+}
+
+// ---- Fetch dari blockchain ----
+async function fetchPrompts() {
+  const list = document.getElementById("prompts-list");
+  list.innerHTML = `<div class="loading">Memuat data dari blockchain...</div>`;
+  try {
+    const sdk = await getSDK();
+    const server = new sdk.SorobanRpc.Server(RPC_URL);
+    const contract = new sdk.Contract(CONTRACT_ID);
+
+    // pakai dummy public account untuk read-only simulation
+    const dummyAccount = new sdk.Account(
+      "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN",
+      "0"
+    );
+
+    const tx = new sdk.TransactionBuilder(dummyAccount, {
+      fee: sdk.BASE_FEE,
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(contract.call("get_prompts"))
+      .setTimeout(30)
+      .build();
+
+    const result = await server.simulateTransaction(tx);
+    if (!result.result) { allPrompts = []; renderPrompts(); return; }
+    allPrompts = sdk.scValToNative(result.result.retval) || [];
+    renderPrompts();
+  } catch (e) {
+    list.innerHTML = `<div class="empty">Gagal memuat: ${escHtml(e.message)}<br><br><small>Pastikan CONTRACT_ID sudah diupdate di index.html</small></div>`;
+  }
+}
+
+// ---- Render ----
+function renderPrompts() {
+  const filterCat = document.getElementById("filter-cat").value.toLowerCase();
+  const filterOwner = document.getElementById("filter-owner").value.toLowerCase();
+
+  const filtered = allPrompts.filter(p =>
+    (p.category || "").toLowerCase().includes(filterCat) &&
+    (p.owner || "").toLowerCase().includes(filterOwner)
+  );
+
+  const myCount = walletAddress
+    ? allPrompts.filter(p => p.owner === walletAddress).length
+    : 0;
+
+  document.getElementById("stat-total").textContent = allPrompts.length;
+  document.getElementById("stat-shown").textContent = filtered.length;
+  document.getElementById("stat-mine").textContent = myCount;
+
+  const list = document.getElementById("prompts-list");
+  if (filtered.length === 0) {
+    list.innerHTML = `<div class="empty">Belum ada prompt yang terdaftar.</div>`;
+    return;
+  }
+
+  // sort terbaru dulu berdasarkan timestamp
+  const sorted = [...filtered].sort((a, b) => Number(b.timestamp) - Number(a.timestamp));
+
+  list.innerHTML = sorted.map(p => {
+    const ts = p.timestamp
+      ? new Date(Number(p.timestamp) * 1000).toLocaleString("id-ID")
+      : "-";
+    const owner = p.owner || "";
+    const shortOwner = owner.length > 12
+      ? owner.slice(0, 8) + "..." + owner.slice(-6)
+      : owner;
+    const isMyPrompt = walletAddress && owner === walletAddress;
+
+    return `
+      <div class="prompt-card ${isMyPrompt ? "mine" : ""}">
+        <div class="card-top">
+          <span class="tag">${escHtml(p.category || "")}</span>
+          ${isMyPrompt ? `<span class="mine-badge">Milikku</span>` : ""}
+        </div>
+        <div class="card-content">${escHtml(p.content || "")}</div>
+        <div class="card-meta">
+          <span>🕐 ${ts}</span>
+          <span class="owner" title="${escHtml(owner)}">👤 ${escHtml(shortOwner)}</span>
+          <div class="card-actions">
+            <button class="btn-sm copy" onclick="copyText('${escAttr(p.content || "")}', this)">Salin</button>
+            ${isMyPrompt ? `
+              <button class="btn-sm edit" onclick='startEdit(${p.id}, ${JSON.stringify(p.category)}, ${JSON.stringify(p.content)})'>Edit</button>
+              <button class="btn-sm del" onclick="deletePrompt(${p.id})">Hapus</button>
+            ` : ""}
+          </div>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+// ---- Helper: sign & send ----
+async function signAndSend(sdk, server, tx) {
+  const preparedTx = await server.prepareTransaction(tx);
+  const { signedTxXdr } = await window.freighter.signTransaction(preparedTx.toXDR(), {
+    networkPassphrase: NETWORK_PASSPHRASE,
+  });
+  const signedTx = sdk.TransactionBuilder.fromXDR(signedTxXdr, NETWORK_PASSPHRASE);
+  const result = await server.sendTransaction(signedTx);
+  if (result.status === "ERROR") throw new Error("Transaksi gagal: " + JSON.stringify(result.errorResult));
+  return result;
+}
+
+// ---- Helper: UI ----
+function copyText(text, btn) {
+  navigator.clipboard.writeText(text).then(() => {
+    const ori = btn.textContent;
+    btn.textContent = "✓";
+    setTimeout(() => btn.textContent = ori, 2000);
+  });
+}
+
+function setStatus(msg, type) {
+  const el = document.getElementById("status-msg");
+  el.textContent = msg;
+  el.className = "show " + type;
+}
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function escAttr(s) {
+  return String(s).replace(/'/g, "\\'").replace(/\n/g, "\\n");
+}
+
+// ---- Init ----
+window.addEventListener("load", fetchPrompts);
+</script>
+</body>
+</html>
