@@ -1,6 +1,33 @@
 # PromptChain DApp
 **PromptChain - The Immutable AI Prompt Registry & Ownership Ledger on Stellar**
 
+![PromptChain frontend preview](fe-contoh.png)
+
+Frontend preview of the current MVP.
+
+## Project Structure
+
+```text
+soroban-prompt-registry/
+├── README.md
+├── index.html
+├── fe-contoh.png
+└── contracts/
+   └── prompts/
+      └── src/
+         ├── lib.rs
+         └── test.rs
+```
+
+## How It Works
+
+1. The frontend loads the prompt registry from the Soroban contract.
+2. The user connects a wallet or uses the local testnet wallet flow.
+3. The user submits a prompt through the browser form.
+4. The app sends a transaction to Stellar Testnet.
+5. The contract stores, updates, or deletes the prompt on-chain.
+6. The frontend refreshes the list so the latest registry is visible.
+
 ## Project Description
 PromptChain is a decentralized smart contract built on the Stellar blockchain using the Soroban SDK. In the era of Generative AI, high-quality prompts are a new form of valuable source code. PromptChain provides a secure, immutable platform for Prompt Engineers and AI researchers to register their prompts, cryptographically proving their ownership and the exact time of creation.
 

@@ -342,6 +342,7 @@
   </main>
 </div>
 
+
 <script>
 // ================================================
 // CONFIG — ganti CONTRACT_ID setelah deploy
@@ -355,6 +356,111 @@ let walletAddress = null;
 let allPrompts = [];
 let editingId = null;
 let StellarSdk = null;
+let localWalletSecret = null;
+const LOCAL_WALLET_SECRET_KEY = "promptchain.local_wallet_secret";
+
+function getFreighterProvider() {
+  if (window.freighter) return window.freighter;
+  if (window.freighterApi) return window.freighterApi;
+  if (window.stellar?.freighter) return window.stellar.freighter;
+  if (
+    window.stellar &&
+    (typeof window.stellar.getAddress === "function" ||
+      typeof window.stellar.getPublicKey === "function" ||
+      typeof window.stellar.signTransaction === "function")
+  ) {
+    return window.stellar;
+  }
+  return null;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function resolveWalletAddress(provider) {
+  if (provider.getAddress && typeof provider.getAddress === "function") {
+    const res = await provider.getAddress();
+    if (typeof res === "string" && res) return res;
+    if (res && typeof res.address === "string" && res.address) return res.address;
+  }
+
+  if (provider.getPublicKey && typeof provider.getPublicKey === "function") {
+    const res = await provider.getPublicKey();
+    if (typeof res === "string" && res) return res;
+    if (res && typeof res.publicKey === "string" && res.publicKey) return res.publicKey;
+    if (res && typeof res.address === "string" && res.address) return res.address;
+  }
+
+  return "";
+}
+
+async function ensureTestnetAccount(sdk, address) {
+  const server = new sdk.SorobanRpc.Server(RPC_URL);
+  try {
+    await server.getAccount(address);
+    return false;
+  } catch (_) {
+    const friendbotUrl = `https://friendbot.stellar.org/?addr=${encodeURIComponent(address)}`;
+    const res = await fetch(friendbotUrl);
+    if (!res.ok) {
+      throw new Error("Gagal funding akun testnet via Friendbot.");
+    }
+
+    // Wait until account is available on RPC after Friendbot funding.
+    for (let i = 0; i < 10; i++) {
+      await sleep(1000);
+      try {
+        await server.getAccount(address);
+        return true;
+      } catch (_) {
+        // keep retrying
+      }
+    }
+    throw new Error("Akun testnet belum terdeteksi di RPC, coba lagi beberapa detik.");
+  }
+}
+
+function loadOrCreateLocalWallet(sdk) {
+  let secret = localStorage.getItem(LOCAL_WALLET_SECRET_KEY);
+  let keypair = null;
+
+  if (secret) {
+    try {
+      keypair = sdk.Keypair.fromSecret(secret);
+    } catch (_) {
+      localStorage.removeItem(LOCAL_WALLET_SECRET_KEY);
+      secret = null;
+    }
+  }
+
+  if (!keypair) {
+    keypair = sdk.Keypair.random();
+    secret = keypair.secret();
+    localStorage.setItem(LOCAL_WALLET_SECRET_KEY, secret);
+  }
+
+  return { keypair, secret };
+}
+
+function normalizePromptValue(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isDuplicatePrompt(category, content, excludeId = null) {
+  const targetCategory = normalizePromptValue(category);
+  const targetContent = normalizePromptValue(content);
+
+  return allPrompts.some((prompt) => {
+    const promptId = String(prompt.id ?? "");
+    if (excludeId !== null && promptId === String(excludeId)) return false;
+
+    return (
+      normalizePromptValue(prompt.category) === targetCategory &&
+      normalizePromptValue(prompt.content) === targetContent
+    );
+  });
+}
 
 // ---- SDK Loader ----
 async function getSDK() {
@@ -371,27 +477,38 @@ async function getSDK() {
 }
 
 // ---- Wallet ----
+// ---- Wallet ----
 async function connectWallet() {
   try {
-    if (typeof window.freighter === "undefined") {
-      setStatus("Install Freighter wallet dulu: freighter.app", "err");
-      return;
-    }
-    const { address } = await window.freighter.getAddress();
-    walletAddress = address;
+    setStatus("Menyiapkan wallet lokal testnet...", "info");
+    const sdk = await getSDK();
+
+    const hasSaved = !!localStorage.getItem(LOCAL_WALLET_SECRET_KEY);
+    const { keypair, secret } = loadOrCreateLocalWallet(sdk);
+    localWalletSecret = secret;
+    walletAddress = keypair.publicKey();
+
+    const fundedNow = await ensureTestnetAccount(sdk, walletAddress);
 
     const btn = document.getElementById("wallet-btn");
-    btn.textContent = address.slice(0,6) + "..." + address.slice(-4);
+    btn.textContent = walletAddress.slice(0, 6) + "..." + walletAddress.slice(-4);
     btn.classList.add("connected");
-    document.getElementById("wallet-addr").textContent = "Testnet";
+    document.getElementById("wallet-addr").textContent = "Local Testnet Wallet";
 
     const submitBtn = document.getElementById("submit-btn");
     submitBtn.textContent = "Daftarkan Hak Cipta";
     submitBtn.disabled = false;
 
-    setStatus("Wallet terhubung!", "ok");
+    if (!hasSaved) {
+      setStatus("Wallet baru dibuat dan siap dipakai di testnet.", "ok");
+    } else if (fundedNow) {
+      setStatus("Wallet lokal ditemukan dan berhasil didanai ulang via Friendbot.", "ok");
+    } else {
+      setStatus("Wallet lokal terhubung.", "ok");
+    }
     renderPrompts();
   } catch (e) {
+    console.error("❌ Connect wallet error:", e);
     setStatus("Gagal connect wallet: " + e.message, "err");
   }
 }
@@ -411,6 +528,11 @@ async function registerPrompt() {
   const category = document.getElementById("inp-category").value.trim();
   const content = document.getElementById("inp-content").value.trim();
   if (!category || !content) { setStatus("Kategori dan isi prompt wajib diisi.", "err"); return; }
+
+  if (isDuplicatePrompt(category, content)) {
+    setStatus("Prompt duplikat: kategori dan isi prompt sudah terdaftar.", "err");
+    return;
+  }
 
   setStatus("Menyiapkan transaksi...", "info");
   try {
@@ -449,6 +571,11 @@ async function updatePrompt() {
   const content = document.getElementById("inp-content").value.trim();
   if (!category || !content) { setStatus("Kategori dan isi prompt wajib diisi.", "err"); return; }
 
+  if (isDuplicatePrompt(category, content, editingId)) {
+    setStatus("Prompt duplikat: kategori dan isi prompt sudah terdaftar.", "err");
+    return;
+  }
+
   setStatus("Menyimpan perubahan...", "info");
   try {
     const sdk = await getSDK();
@@ -463,7 +590,7 @@ async function updatePrompt() {
       .addOperation(contract.call(
         "update_prompt",
         sdk.Address.fromString(walletAddress).toScVal(),
-        sdk.nativeToScVal(editingId, { type: "u64" }),
+        sdk.nativeToScVal(BigInt(editingId), { type: "u64" }),
         sdk.nativeToScVal(category, { type: "string" }),
         sdk.nativeToScVal(content, { type: "string" }),
       ))
@@ -498,7 +625,7 @@ async function deletePrompt(id) {
       .addOperation(contract.call(
         "delete_prompt",
         sdk.Address.fromString(walletAddress).toScVal(),
-        sdk.nativeToScVal(id, { type: "u64" }),
+        sdk.nativeToScVal(BigInt(id), { type: "u64" }),
       ))
       .setTimeout(30)
       .build();
@@ -513,7 +640,7 @@ async function deletePrompt(id) {
 
 // ---- Edit Mode ----
 function startEdit(id, category, content) {
-  editingId = id;
+  editingId = String(id);
   document.getElementById("inp-category").value = category;
   document.getElementById("inp-content").value = content;
   document.getElementById("form-mode-label").textContent = "Edit Prompt";
@@ -545,7 +672,7 @@ async function fetchPrompts() {
 
     // pakai dummy public account untuk read-only simulation
     const dummyAccount = new sdk.Account(
-      "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN",
+      sdk.Keypair.random().publicKey(),
       "0"
     );
 
@@ -601,6 +728,7 @@ function renderPrompts() {
     const shortOwner = owner.length > 12
       ? owner.slice(0, 8) + "..." + owner.slice(-6)
       : owner;
+    const idStr = String(p.id ?? "");
     const isMyPrompt = walletAddress && owner === walletAddress;
 
     return `
@@ -616,8 +744,8 @@ function renderPrompts() {
           <div class="card-actions">
             <button class="btn-sm copy" onclick="copyText('${escAttr(p.content || "")}', this)">Salin</button>
             ${isMyPrompt ? `
-              <button class="btn-sm edit" onclick='startEdit(${p.id}, ${JSON.stringify(p.category)}, ${JSON.stringify(p.content)})'>Edit</button>
-              <button class="btn-sm del" onclick="deletePrompt(${p.id})">Hapus</button>
+              <button class="btn-sm edit" onclick='startEdit(${JSON.stringify(idStr)}, ${JSON.stringify(p.category)}, ${JSON.stringify(p.content)})'>Edit</button>
+              <button class="btn-sm del" onclick='deletePrompt(${JSON.stringify(idStr)})'>Hapus</button>
             ` : ""}
           </div>
         </div>
@@ -627,13 +755,53 @@ function renderPrompts() {
 
 // ---- Helper: sign & send ----
 async function signAndSend(sdk, server, tx) {
+  async function waitForTx(hash) {
+    try {
+      for (let i = 0; i < 20; i++) {
+        const txRes = await server.getTransaction(hash);
+        if (txRes.status === "SUCCESS") return txRes;
+        if (txRes.status === "FAILED") {
+          throw new Error("Transaksi gagal saat konfirmasi.");
+        }
+        await sleep(1000);
+      }
+      throw new Error("Transaksi masih pending terlalu lama.");
+    } catch (e) {
+      const msg = String(e?.message || e || "").toLowerCase();
+      // Some RPC/SDK version combinations throw "bad union switch" while decoding getTransaction.
+      if (msg.includes("bad union switch")) {
+        console.warn("Konfirmasi detail transaksi dilewati karena mismatch RPC/SDK:", e);
+        return { status: "PENDING", hash };
+      }
+      throw e;
+    }
+  }
+
   const preparedTx = await server.prepareTransaction(tx);
-  const { signedTxXdr } = await window.freighter.signTransaction(preparedTx.toXDR(), {
+  if (localWalletSecret) {
+    const kp = sdk.Keypair.fromSecret(localWalletSecret);
+    preparedTx.sign(kp);
+    const result = await server.sendTransaction(preparedTx);
+    if (result.status === "ERROR") throw new Error("Transaksi gagal: " + JSON.stringify(result.errorResult));
+    if (result.hash) return await waitForTx(result.hash);
+    return result;
+  }
+
+  const freighter = getFreighterProvider();
+  if (!freighter || !freighter.signTransaction) {
+    throw new Error("Signer tidak tersedia. Klik Connect Wallet dulu.");
+  }
+
+  const signRes = await freighter.signTransaction(preparedTx.toXDR(), {
     networkPassphrase: NETWORK_PASSPHRASE,
   });
+  const signedTxXdr = typeof signRes === "string" ? signRes : signRes?.signedTxXdr;
+  if (!signedTxXdr) throw new Error("Signer tidak mengembalikan signed transaction.");
+
   const signedTx = sdk.TransactionBuilder.fromXDR(signedTxXdr, NETWORK_PASSPHRASE);
   const result = await server.sendTransaction(signedTx);
   if (result.status === "ERROR") throw new Error("Transaksi gagal: " + JSON.stringify(result.errorResult));
+  if (result.hash) return await waitForTx(result.hash);
   return result;
 }
 
